@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluid Interaction Particle Sphere</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #FFFFFF;
+            user-select: none;
+            cursor: default;
+            touch-action: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-color: #FFFFFF;
+        }
+
+        /* Minimal high-fidelity instruction banner */
+        .instruction-overlay {
+            position: absolute;
+            left: 50%;
+            bottom: 32px;
+            transform: translateX(-50%);
+            color: #94A3B8;
+            font-size: 11px;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            font-weight: 600;
+            pointer-events: none;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            opacity: 0.8;
+            animation: breathe 3s infinite ease-in-out;
+        }
+
+        @keyframes breathe {
+            0%, 100% { opacity: 0.55; }
+            50% { opacity: 0.95; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="particleCanvas"></canvas>
+    <div class="instruction-overlay">Swipe fast to create colorful swirling wakes</div>
+
+    <script>
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        const colors = ['#4F46E5', '#E11D48', '#EC4899'];
+        const numParticles = 120;
+        const friction = 0.95; // requested friction 0.94-0.96
+
+        const particles = [];
+
+        // Global Mouse & Touch Input State
+        const mouse = {
+            x: 0,
+            y: 0,
+            prevX: 0,
+            prevY: 0,
+            dx: 0,
+            dy: 0,
+            speed: 0,
+            active: false,
+            timer: null
+        };
+
+        class Particle {
+            constructor() {
+                this.reset(true);
+            }
+
+            reset(randomly = false) {
+                this.radius = 2 + Math.random() * 1.0; // radius 2px to 3px
+                if (randomly) {
+                    this.x = Math.random() * width;
+                    this.y = Math.random() * height;
+                } else {
+                    this.x = Math.random() * width;
+                    this.y = Math.random() * height;
+                }
+                // Random low velocity drift
+                this.vx = (Math.random() - 0.5) * 0.4;
+                this.vy = (Math.random() - 0.5) * 0.4;
+                this.color = colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            update() {
+                // Continuous Brownian Motion drift force
+                const driftStrength = 0.045;
+                this.vx += (Math.random() - 0.5) * driftStrength;
+                this.vy += (Math.random() - 0.5) * driftStrength;
+
+                if (mouse.active) {
+                    const dx = mouse.x - this.x;
+                    const dy = mouse.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Mouse attraction logic within 180px radius
+                    if (distance < 180) {
+                        // Attraction force is inversely proportional to distance (closer = stronger pull)
+                        const proximityFactor = (1.0 - distance / 180);
+                        const attractForce = proximityFactor * 0.45; // balanced inverse pull
+                        
+                        // Add pull acceleration towards the cursor
+                        this.vx += (dx / (distance || 1)) * attractForce;
+                        this.vy += (dy / (distance || 1)) * attractForce;
+
+                        // Wake reaction from fast mouse movement
+                        if (mouse.speed > 0.1) {
+                            // Pushed in the direction of mouse movement, with magnitude proportional to mouse speed
+                            const wakeStrength = 0.065;
+                            const proximityWeight = (1.0 - distance / 180);
+                            this.vx += mouse.dx * wakeStrength * proximityWeight;
+                            this.vy += mouse.dy * wakeStrength * proximityWeight;
+                        }
+                    }
+                }
+
+                // Smooth linear decay (friction / inertia)
+                this.vx *= friction;
+                this.vy *= friction;
+
+                // Enforce velocity limits to prevent high speed scatter
+                const maxSpeed = 12;
+                const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                if (speed > maxSpeed) {
+                    this.vx = (this.vx / speed) * maxSpeed;
+                    this.vy = (this.vy / speed) * maxSpeed;
+                }
+
+                // Integrate coordinates
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Gentle bounce off screen boundaries
+                const bounceElasticity = -0.55;
+                if (this.x < this.radius) {
+                    this.x = this.radius;
+                    this.vx *= bounceElasticity;
+                } else if (this.x > width - this.radius) {
+                    this.x = width - this.radius;
+                    this.vx *= bounceElasticity;
+                }
+
+                if (this.y < this.radius) {
+                    this.y = this.radius;
+                    this.vy *= bounceElasticity;
+                } else if (this.y > height - this.radius) {
+                    this.y = height - this.radius;
+                    this.vy *= bounceElasticity;
+                }
+            }
+
+            draw() {
+                // Render as high fidelity transparent circle
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        // Initialize particle array
+        for (let i = 0; i < numParticles; i++) {
+            particles.push(new Particle());
+        }
+
+        // Track mouse real-time offsets
+        function updateMouseSpeed() {
+            if (mouse.active) {
+                mouse.dx = mouse.x - mouse.prevX;
+                mouse.dy = mouse.y - mouse.prevY;
+                mouse.speed = Math.sqrt(mouse.dx * mouse.dx + mouse.dy * mouse.dy);
+                
+                mouse.prevX = mouse.x;
+                mouse.prevY = mouse.y;
+            } else {
+                mouse.dx = 0;
+                mouse.dy = 0;
+                mouse.speed = 0;
+            }
+        }
+
+        // Window resize event handler
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }, { passive: true });
+
+        // Event listener setup for Mouse
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+            
+            if (!mouse.active) {
+                // Stabilize starting coordinates to prevent speed spike
+                mouse.prevX = mouse.x;
+                mouse.prevY = mouse.y;
+                mouse.active = true;
+            }
+
+            clearTimeout(mouse.timer);
+            mouse.timer = setTimeout(() => {
+                mouse.dx = 0;
+                mouse.dy = 0;
+                mouse.speed = 0;
+            }, 100);
+        });
+
+        window.addEventListener('mouseleave', () => {
+            mouse.active = false;
+        });
+
+        window.addEventListener('mouseenter', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+            mouse.prevX = e.clientX;
+            mouse.prevY = e.clientY;
+            mouse.active = true;
+        });
+
+        // Touch event handlers for high responsiveness on mobile
+        window.addEventListener('touchmove', (e) => {
+            if (e.touches && e.touches[0]) {
+                mouse.x = e.touches[0].clientX;
+                mouse.y = e.touches[0].clientY;
+                if (!mouse.active) {
+                    mouse.prevX = mouse.x;
+                    mouse.prevY = mouse.y;
+                    mouse.active = true;
+                }
+            }
+        }, { passive: true });
+
+        window.addEventListener('touchend', () => {
+            mouse.active = false;
+        });
+
+        // Core Render Loop
+        function animate() {
+            // Fill white as background
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, width, height);
+
+            // Compute mouse position progress
+            updateMouseSpeed();
+
+            // Render and coordinate updating for all particles
+            ctx.globalAlpha = 0.85; // Slight transparent look as requested
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            ctx.globalAlpha = 1.0;
+
+            requestAnimationFrame(animate);
+        }
+
+        // Bootstrap frame
+        animate();
+    </script>
+</body>
+</html>

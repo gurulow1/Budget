@@ -1,0 +1,8 @@
+{
+  "name": "Открытый бюджет Москвы - Сервисы",
+  "description": "Интерактивная система физических частиц с эффектами магнитного притяжения и вихревого следа во весь экран",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

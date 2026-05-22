@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="ru" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>МосГорБюджет.Трек</title>
+    <!-- Tailwind CSS v3 via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and ReactDOM v18 via CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel standalone to compile JSX on the fly -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Inter Typeface -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        moscowRed: '#CC1111',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #F8FAFC; 
+            color: #0F172A; 
+            -webkit-tap-highlight-color: transparent;
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        
+        .spinner { border: 2px solid #E2E8F0; border-top: 2px solid #CC1111; border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #CC1111; cursor: pointer; margin-top: -7px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #E2E8F0; border-radius: 2px; }
+    </style>
+</head>
+<body class="bg-[#F8FAFC] text-[#0F172A] min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Secure in-memory fallback proxy to guard against browser SecurityError in sandboxed local webviews (file://, content://, discrete iframes)
+        const localStorage = (() => {
+            const memoryStorage = {};
+            let storageSupported = false;
+            try {
+                const test = "__test__";
+                window.localStorage.setItem(test, test);
+                window.localStorage.removeItem(test);
+                storageSupported = true;
+            } catch (e) {
+                console.warn("Local storage blocked or unavailable; falling back to high-fidelity isolated memory container:", e);
+            }
+
+            return {
+                getItem: (k) => {
+                    if (storageSupported) {
+                        try { return window.localStorage.getItem(k); } catch (e) { console.warn(e); }
+                    }
+                    return memoryStorage.hasOwnProperty(k) ? memoryStorage[k] : null;
+                },
+                setItem: (k, v) => {
+                    if (storageSupported) {
+                        try { window.localStorage.setItem(k, v); return; } catch (e) { console.warn(e); }
+                    }
+                    memoryStorage[k] = String(v);
+                },
+                removeItem: (k) => {
+                    if (storageSupported) {
+                        try { window.localStorage.removeItem(k); return; } catch (e) { console.warn(e); }
+                    }
+                    delete memoryStorage[k];
+                },
+                clear: () => {
+                    if (storageSupported) {
+                        try { window.localStorage.clear(); return; } catch (e) { console.warn(e); }
+                    }
+                    for (const key in memoryStorage) delete memoryStorage[key];
+                }
+            };
+        })();
+
+        // --- ICONS ---
+        const Icons = {
+            Services: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>,
+            Quests: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg>,
+            Mayor: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>,
+            Analytics: () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>,
+            Check: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        };
+
+        // --- TAB 1: SERVICES ---
+        const ServicesTab = () => {
+            const [edu, setEdu] = useState(45000);
+            const [sport, setSport] = useState(15000);
+            const sum = edu + sport;
+            const exceeded = sum > 150000;
+            const refund = Math.round(Math.min(sum, 150000) * 0.13);
+
+            const [messages, setMessages] = useState([
+                { id: 1, role: 'assistant', text: 'Здравствуйте! Я МосБюджет.Ассистент. Готов ответить на вопросы по налогам, льготам и бюджету города Москвы.' }
+            ]);
+            const [inputValue, setInputValue] = useState('');
+            const [isTyping, setIsTyping] = useState(false);
+            const messagesEndRef = useRef(null);
+
+            const sendMessage = (e) => {
+                e.preventDefault();
+                if (!inputValue.trim()) return;
+                setMessages(prev => [...prev, { id: Date.now(), role: 'user', text: inputValue }]);
+                setInputValue('');
+                setIsTyping(true);
+                setTimeout(() => {
+                    setMessages(prev => [...prev, {
+                        id: Date.now() + 1,
+                        role: 'assistant',
+                        text: 'Согласно Закону о бюджете города Москвы на 2026 год, налоговые доходы остаются ключевым фундаментом развития. Главными источниками выступают НДФЛ и Налог на прибыль организаций. '
+                    }]);
+                    setIsTyping(false);
+                    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                }, 1000);
+            };
+
+            return (
+                <div className="space-y-6 fade-in h-full flex flex-col xl:flex-row gap-6">
+                    {/* Calculator */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-[#E2E8F0] p-6 lg:p-8 flex-1">
+                        <h2 className="text-xl font-bold mb-6 text-[#0F172A] tracking-tight">Калькулятор Вычетов 2.0 (3-НДФЛ)</h2>
+                        <div className="space-y-8">
+                            <div>
+                                <div className="flex justify-between text-sm font-semibold mb-3">
+                                    <span className="text-[#475569]">Расходы на образование (руб.)</span>
+                                    <span className="text-[#CC1111] font-mono">{edu.toLocaleString('ru-RU')} ₽</span>
+                                </div>
+                                <input type="range" min="0" max="250000" step="5000" value={edu} onChange={e => setEdu(Number(e.target.value))} className="w-full" />
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-sm font-semibold mb-3">
+                                    <span className="text-[#475569]">Расходы на спорт и фитнес (руб.)</span>
+                                    <span className="text-[#CC1111] font-mono">{sport.toLocaleString('ru-RU')} ₽</span>
+                                </div>
+                                <input type="range" min="0" max="250000" step="5000" value={sport} onChange={e => setSport(Number(e.target.value))} className="w-full" />
+                            </div>
+                            
+                            <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-5 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                                <span className="font-bold text-[#0F172A]">Итоговая сумма к возврату:</span>
+                                <span className="text-3xl font-extrabold text-emerald-600 font-mono">{refund.toLocaleString('ru-RU')} ₽</span>
+                            </div>
+
+                            {exceeded && (
+                                <div className="bg-orange-50 border border-orange-200 text-orange-800 p-4 rounded-xl text-sm font-medium fade-in leading-relaxed">
+                                    🚨 <strong>Внимание:</strong> Совокупный лимит по социальным вычетам согласно НК РФ составляет 150 000 ₽. Сумма свыше лимита не учитывается в расчете возврата.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Chat */}
+                    <div className="bg-white rounded-2xl shadow-sm border border-[#E2E8F0] flex flex-col h-[500px] xl:h-auto flex-1">
+                        <div className="p-4 border-b border-[#E2E8F0] bg-[#F8FAFC] rounded-t-2xl font-bold flex items-center gap-3">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse border border-white"></span>
+                            ИИ-Ассистент "МосБюджет"
+                        </div>
+                        <div className="flex-1 p-5 overflow-y-auto space-y-4">
+                            {messages.map(msg => (
+                                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[85%] p-3.5 rounded-2xl text-sm leading-relaxed shadow-xs ${msg.role === 'user' ? 'bg-[#CC1111] text-white rounded-br-sm' : 'bg-[#F8FAFC] border border-[#E2E8F0] text-[#0F172A] rounded-bl-sm'}`}>
+                                        {msg.text}
+                                    </div>
+                                </div>
+                            ))}
+                            {isTyping && (
+                                <div className="flex justify-start fade-in">
+                                    <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-3.5 rounded-2xl rounded-bl-sm flex items-center gap-2">
+                                        <div className="spinner"></div>
+                                        <span className="text-xs font-semibold text-slate-500 tracking-wide">Подготовка справки...</span>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} />
+                        </div>
+                        <form onSubmit={sendMessage} className="p-4 border-t border-[#E2E8F0] flex gap-3 max-w-full">
+                            <input 
+                                type="text" 
+                                value={inputValue} 
+                                onChange={e => setInputValue(e.target.value)} 
+                                placeholder="Задайте вопрос о бюджете..." 
+                                className="flex-1 bg-white border border-[#E2E8F0] shadow-inner rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#CC1111] transition-colors"
+                            />
+                            <button disabled={isTyping} type="submit" className="bg-[#0F172A] hover:bg-slate-800 disabled:opacity-50 text-white px-5 py-3 rounded-xl font-bold text-sm transition-colors cursor-pointer">
+                                Отправить
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- TAB 2: QUESTS ---
+        const QUIZZES = [
+            { id: 'q1', type: 'quiz', title: 'Доходы бюджета 2026', pts: 100, topic: 'Налоги и сборы',
+              q: [
+                  { t: 'Какой налог формирует наибольшую часть налоговых доходов бюджета города Москвы?', o: ['Налог на прибыль организаций', 'Налог на имущество физических лиц', 'Транспортный налог'], a: 0, exp: 'Налог на прибыль организаций и НДФЛ являются главными китами доходной части бюджета столицы.' },
+                  { t: 'Куда зачисляется налог на профессиональный доход (самозанятые) в Москве?', o: ['100% в федеральный бюджет', '100% в бюджет города Москвы', '60% в бюджет Москвы, 40% в ФОМС'], a: 2, exp: 'Согласно Бюджетному кодексу РФ, 60% идет в субъект (Москва), а 40% направляется на обязательное медицинское страхование в ФОМС.' },
+                  { t: 'Является ли торговый сбор в Москве региональным или местным налогом?', o: ['Региональным', 'Местным', 'Федеральным'], a: 1, exp: 'Торговый сбор относится к местным сборам, регулируется законами субъекта и зачисляется в его бюджет.'}
+              ] },
+            { id: 'q2', type: 'quiz', title: 'Расходная часть и Промышленность', pts: 120, topic: 'ГРБС и Субсидии',
+              q: [
+                  { t: 'Какая ключевая цель предоставления субсидий промышленным организациям?', o: ['Возмещение затрат на покупку оборудования', 'Оплата рекламных кампаний', 'Покрытие штрафов'], a: 0, exp: 'Субсидии направлены на модернизацию производств и развитие инжиниринга.' },
+                  { t: 'Что такое ГРБС в бюджетном процессе?', o: ['Государственный реестр банковских счетов', 'Главный распорядитель бюджетных средств', 'Городской совет бюджета'], a: 1, exp: 'ГРБС распределяет лимиты бюджетных обязательств до получателей.' },
+                  { t: 'В какой форме часто предоставляется финансовая поддержка ИТ-промышленности?', o: ['Прямой выкуп акций', 'Льготные займы Фонда развития промышленности', 'Выдача наличных средств'], a: 1, exp: 'Московский Фонд развития промышленности предоставляет целевые средства.'}
+              ] },
+            { id: 'q3', type: 'quiz', title: 'Налоговые вычеты 3-НДФЛ', pts: 100, topic: 'Лимиты и возвраты',
+              q: [
+                  { t: 'Каков совокупный лимит для социальных налоговых вычетов в 2026 году?', o: ['120 000 рублей', '150 000 рублей', '250 000 рублей'], a: 1, exp: 'В рамках обновленного законодательства лимит увеличен до 150 000 рублей в год.' },
+                  { t: 'В течение какого срока после окончания года можно подать декларацию?', o: ['1 год', '3 года', '5 лет'], a: 1, exp: 'Налогоплательщик имеет право вернуть излишне уплаченный налог в течение 3 лет.' },
+                  { t: 'Какой документ требуется для подтверждения доходов?', o: ['Справка 2-НДФЛ', 'Декларация 3-НДФЛ', 'Больничный лист'], a: 1, exp: 'Именно 3-НДФЛ заполняется для налогового вычета.'}
+              ] }
+        ];
+
+        const MINIGAMES = [
+            { id: 'g1', type: 'game', title: 'Балансировщик бюджета', pts: 150, topic: 'Распределение субсидий' },
+            { id: 'g2', type: 'game', title: 'Аудит заявок', pts: 150, topic: 'Борьба с нарушениями' },
+            { id: 'g3', type: 'game', title: 'Инвест-Кликер', pts: 200, topic: 'Выбор инноваций' }
+        ];
+
+        const SPECIALS = [
+            { id: 's1', type: 'special', title: 'Интерактивный Тур', pts: 50, msg: 'Проект в разработке' },
+            { id: 's2', type: 'special', title: 'Лекция Аналитика', pts: 50, msg: 'Доступно на выставке' }
+        ];
+
+        const QuestsTab = ({ addPoints }) => {
+            const [filter, setFilter] = useState('quiz'); // quiz, game, special
+            const [completed, setCompleted] = useState(() => {
+                try { return JSON.parse(localStorage.getItem('mos_completed_v4')) || []; } catch { return []; }
+            });
+            const [activeQuest, setActiveQuest] = useState(null);
+
+            const completeQuest = (id, pts) => {
+                if (!completed.includes(id)) {
+                    const next = [...completed, id];
+                    setCompleted(next);
+                    try { localStorage.setItem('mos_completed_v4', JSON.stringify(next)); } catch {}
+                    addPoints(pts);
+                }
+                setActiveQuest(null);
+            };
+
+            const renderInteractive = () => {
+                if (!activeQuest) return null;
+
+                if (activeQuest.id.startsWith('q')) {
+                    return <QuizApp quiz={activeQuest} onComplete={() => completeQuest(activeQuest.id, activeQuest.pts)} onBack={()=>setActiveQuest(null)}/>;
+                }
+
+                if (activeQuest.id === 'g1') {
+                    return <GameBalancer onComplete={() => completeQuest('g1', 150)} onBack={()=>setActiveQuest(null)}/>;
+                }
+                if (activeQuest.id === 'g2') {
+                    return <GameAuditor onComplete={() => completeQuest('g2', 150)} onBack={()=>setActiveQuest(null)}/>;
+                }
+                if (activeQuest.id === 'g3') {
+                    return <GameInvest onComplete={() => completeQuest('g3', 200)} onBack={()=>setActiveQuest(null)}/>;
+                }
+
+                return (
+                    <div className="bg-white p-6 rounded-2xl border border-[#E2E8F0] text-center shadow-sm">
+                        <div className="text-4xl mb-4">🚧</div>
+                        <h2 className="text-xl font-bold text-[#0F172A] mb-2">Проект в разработке</h2>
+                        <p className="mb-6 text-slate-500">Данный спецпроект станет доступен в ближайшем обновлении.</p>
+                        <button className="px-6 py-2.5 font-bold font-sm bg-slate-100 hover:bg-slate-200 text-[#0F172A] rounded-xl transition" onClick={()=>setActiveQuest(null)}>Назад в меню</button>
+                    </div>
+                );
+            };
+
+            const selectedList = filter === 'quiz' ? QUIZZES : filter === 'game' ? MINIGAMES : SPECIALS;
+
+            if (activeQuest) {
+                return <div className="fade-in">{renderInteractive()}</div>;
+            }
+
+            return (
+                <div className="space-y-6 fade-in pb-12">
+                    <div className="flex gap-2 p-1.5 bg-white border border-[#E2E8F0] shadow-sm w-max rounded-xl">
+                        {[ {id:'quiz',l:'Викторины'}, {id:'game',l:'Мини-игры'}, {id:'special',l:'Спецпроекты'} ].map(t => (
+                            <button key={t.id} onClick={() => setFilter(t.id)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${filter===t.id ? 'bg-[#0F172A] text-white shadow-md' : 'text-[#475569] hover:bg-slate-50'}`}>
+                                {t.l}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
+                        {selectedList.map(item => {
+                            const isDone = completed.includes(item.id);
+                            return (
+                                <div key={item.id} className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-sm flex flex-col justify-between items-start gap-4 hover:shadow-md transition-shadow">
+                                    <div className="w-full">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <span className="bg-rose-50 text-[#CC1111] px-2.5 py-1 rounded-md text-xs font-bold font-mono tracking-wide">
+                                                +{item.pts} БАЛЛОВ
+                                            </span>
+                                            {isDone && <span className="text-emerald-500 bg-emerald-50 p-1.5 rounded-full"><Icons.Check/></span>}
+                                        </div>
+                                        <h3 className="text-lg font-bold text-[#0F172A] leading-tight">{item.title}</h3>
+                                        <p className="text-sm font-medium text-[#475569] mt-2">{item.topic || item.msg}</p>
+                                    </div>
+                                    <button 
+                                        disabled={isDone}
+                                        onClick={() => setActiveQuest(item)}
+                                        className={`w-full py-3 rounded-xl text-sm font-bold transition-all ${isDone ? 'bg-[#F8FAFC] text-slate-400 border border-slate-200 cursor-not-allowed' : 'bg-[#CC1111] hover:bg-red-700 text-white shadow-md cursor-pointer'}`}
+                                    >
+                                        {isDone ? 'Завершено' : 'Начать выполнение'}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const QuizApp = ({quiz, onComplete, onBack}) => {
+            const [step, setStep] = useState(0);
+            const [selected, setSelected] = useState(null);
+            const [showExp, setShowExp] = useState(false);
+
+            const handleAns = (idx) => {
+                if (showExp) return;
+                setSelected(idx);
+                setShowExp(true);
+            };
+
+            const handleNext = () => {
+                if (step === quiz.q.length - 1) {
+                    onComplete();
+                } else {
+                    setStep(s=>s+1);
+                    setSelected(null);
+                    setShowExp(false);
+                }
+            };
+
+            const q = quiz.q[step];
+            const isCorrect = selected === q.a;
+
+            return (
+                <div className="bg-white p-6 md:p-10 rounded-2xl border border-[#E2E8F0] shadow-sm max-w-3xl mx-auto">
+                    <button onClick={onBack} className="text-sm font-bold text-slate-400 hover:text-[#0F172A] transition-colors mb-6 flex items-center gap-2">← Отмена</button>
+                    <div className="text-xs font-extrabold text-[#CC1111] mb-3 uppercase tracking-widest">Вопрос {step+1} из {quiz.q.length}</div>
+                    <h2 className="text-2xl font-bold mb-8 text-[#0F172A] leading-snug">{q.t}</h2>
+                    <div className="space-y-4">
+                        {q.o.map((o, i) => {
+                            let cl = "border-[#E2E8F0] hover:bg-slate-50 cursor-pointer bg-white text-[#0F172A]";
+                            if (showExp) {
+                                if (i === q.a) cl = "bg-emerald-50 border-emerald-400 text-emerald-900 shadow-sm";
+                                else if (i === selected) cl = "bg-red-50 border-red-300 text-red-900";
+                                else cl = "opacity-40 border-[#E2E8F0] cursor-not-allowed";
+                            }
+                            return (
+                                <div key={i} onClick={() => handleAns(i)} className={`border-2 p-5 rounded-xl text-base font-semibold transition-all ${cl}`}>
+                                    {o}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {showExp && (
+                        <div className={`mt-8 p-5 rounded-xl text-sm leading-relaxed border fade-in ${isCorrect ? 'bg-emerald-50 text-emerald-900 border-emerald-200' : 'bg-red-50 text-red-900 border-red-200'}`}>
+                            <div className="font-extrabold mb-1">{isCorrect ? 'Правильно!' : 'Ошибка.'}</div>
+                            {q.exp}
+                        </div>
+                    )}
+                    {showExp && (
+                        <button onClick={handleNext} className="mt-8 w-full py-4 bg-[#0F172A] hover:bg-slate-800 text-white rounded-xl font-bold transition-colors fade-in">
+                            {step === quiz.q.length - 1 ? 'Завершить этап и получить баллы' : 'Следующий вопрос'}
+                        </button>
+                    )}
+                </div>
+            );
+        };
+
+        const GameBalancer = ({onComplete, onBack}) => {
+            const [ind, setInd] = useState(20);
+            const [soc, setSoc] = useState(40);
+            const [tra, setTra] = useState(40);
+            const total = ind + soc + tra;
+
+            return (
+                <div className="bg-white p-6 md:p-10 rounded-2xl border border-[#E2E8F0] shadow-sm max-w-3xl mx-auto">
+                    <button onClick={onBack} className="text-sm font-bold text-slate-400 hover:text-[#0F172A] transition-colors mb-6 block w-max">← Назад</button>
+                    <h2 className="text-3xl font-extrabold text-[#0F172A] tracking-tight mb-2">Балансировщик бюджета</h2>
+                    <p className="text-base text-[#475569] mb-8 font-medium leading-relaxed">Сбалансируйте доли так, чтобы их сумма составила ровно 100%. Обязательное законодательное требование: <strong className="text-[#CC1111]">Промышленность не менее 35%</strong>.</p>
+                    
+                    <div className="space-y-8 bg-[#F8FAFC] p-8 rounded-2xl border border-[#E2E8F0]">
+                        <div>
+                            <div className="flex justify-between mb-3 text-sm font-extrabold tracking-wide text-[#0F172A] uppercase"><span>Промышленность</span><span className={ind >= 35 ? 'text-emerald-600' : 'text-[#CC1111]'}>{ind}%</span></div>
+                            <input type="range" min="0" max="100" value={ind} onChange={e=>setInd(Number(e.target.value))} className="w-full" />
+                        </div>
+                        <div>
+                            <div className="flex justify-between mb-3 text-sm font-extrabold tracking-wide text-[#0F172A] uppercase"><span>Социальная сфера</span><span>{soc}%</span></div>
+                            <input type="range" min="0" max="100" value={soc} onChange={e=>setSoc(Number(e.target.value))} className="w-full" />
+                        </div>
+                        <div>
+                            <div className="flex justify-between mb-3 text-sm font-extrabold tracking-wide text-[#0F172A] uppercase"><span>Транспорт</span><span>{tra}%</span></div>
+                            <input type="range" min="0" max="100" value={tra} onChange={e=>setTra(Number(e.target.value))} className="w-full" />
+                        </div>
+                    </div>
+
+                    <div className={`mt-8 p-5 rounded-2xl text-center font-bold text-xl border-2 transition-colors ${total === 100 ? 'bg-emerald-50 border-emerald-300 text-emerald-800' : 'bg-orange-50 border-orange-300 text-orange-800'}`}>
+                        Сумма долей: <span className="font-mono ml-2">{total}%</span>
+                    </div>
+
+                    <button 
+                        disabled={total !== 100}
+                        onClick={() => { if(ind >= 35) onComplete(); else alert('Ошибка! Доля промышленности должна быть не менее 35%.'); }}
+                        className={`w-full py-4 mt-6 rounded-xl font-bold text-lg transition-colors shadow-sm ${total === 100 ? 'bg-[#CC1111] hover:bg-red-700 text-white cursor-pointer' : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'}`}
+                    >
+                        Утвердить Бюджет Субъекта
+                    </button>
+                </div>
+            );
+        };
+
+        const GameAuditor = ({onComplete, onBack}) => {
+            const rows = [
+                {id:1, t:'Закупка мед. оборудования (Томографы)', amt:'1.2 МЛРД ₽', illegal: false},
+                {id:2, t:'Капитальный ремонт школ в ЗАО', amt:'3.4 МЛРД ₽', illegal: false},
+                {id:3, t:'Криптовалюта для ГРБС (Анонимные транзакции)', amt:'0.5 МЛРД ₽', illegal: true}
+            ];
+            return (
+                <div className="bg-white p-6 md:p-10 rounded-2xl border border-[#E2E8F0] shadow-sm max-w-3xl mx-auto">
+                    <button onClick={onBack} className="text-sm font-bold text-slate-400 hover:text-[#0F172A] transition-colors mb-6 block w-max">← Назад</button>
+                    <h2 className="text-3xl font-extrabold text-[#0F172A] tracking-tight mb-2">Финансовый Аудит</h2>
+                    <p className="text-base text-[#475569] mb-8 font-medium leading-relaxed">Вам поступили 3 заявки от ГРБС. Найдите заявку, противоречащую бюджетному законодательству РФ, и отклоните финансирование.</p>
+                    
+                    <div className="space-y-4">
+                        {rows.map(r => (
+                            <div key={r.id} onClick={() => { if(r.illegal) onComplete(); else alert('Ошибка: Вы отклонили легальную социально значимую заявку!'); }} className="p-5 border-2 border-[#E2E8F0] rounded-xl hover:border-[#CC1111] cursor-pointer hover:bg-red-50 transition-all bg-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
+                                <span className="font-bold text-[#0F172A] text-base group-hover:text-[#CC1111] transition-colors">{r.t}</span>
+                                <span className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg border border-slate-200 font-mono font-bold tracking-wide w-max">{r.amt}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const GameInvest = ({onComplete, onBack}) => {
+            return (
+                <div className="bg-white p-6 md:p-10 rounded-2xl border border-[#E2E8F0] shadow-sm max-w-3xl mx-auto">
+                    <button onClick={onBack} className="text-sm font-bold text-slate-400 hover:text-[#0F172A] transition-colors mb-6 block w-max">← Назад</button>
+                    <h2 className="text-3xl font-extrabold text-[#0F172A] tracking-tight mb-2">Инвест-Кликер</h2>
+                    <p className="text-base text-[#475569] mb-8 font-medium leading-relaxed">Мэр города выделил целевой субсидиарный грант в размере 500 млн рублей. Выберите проект с максимальным инновационным потенциалом для Москвы.</p>
+
+                    <div className="grid sm:grid-cols-2 gap-6">
+                        <button onClick={() => alert('Отказ: Неэффективное распределение бюджетных средств.')} className="p-8 bg-[#F8FAFC] hover:bg-slate-100 border-2 border-[#E2E8F0] hover:border-slate-400 rounded-2xl cursor-pointer transition text-left flex flex-col justify-between">
+                            <span className="text-4xl mb-4 block">🪧</span>
+                            <div>
+                                <h3 className="font-extrabold text-lg text-[#0F172A] mb-1">Сеть рекламных щитов</h3>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">+ Индекс визуального шума</p>
+                            </div>
+                        </button>
+                        <button onClick={onComplete} className="p-8 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 hover:border-blue-400 rounded-2xl cursor-pointer transition text-left flex flex-col justify-between">
+                            <span className="text-4xl mb-4 block">🏭</span>
+                            <div>
+                                <h3 className="font-extrabold text-lg text-[#0F172A] mb-1">Технопарк "Строгино"</h3>
+                                <p className="text-xs font-extrabold text-blue-700 uppercase tracking-widest">+15% Индекс инноваций</p>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- TAB 3: MAYOR SIMULATION ---
+        const MayorTab = ({addPoints}) => {
+            const POOL = 100000000;
+            const [sch, setSch] = useState(25000000);
+            const [tra, setTra] = useState(25000000);
+            const [ind, setInd] = useState(25000000);
+            
+            const sum = sch + tra + ind;
+            const rem = POOL - sum;
+            
+            const sat = Math.min((sch + tra) / 60000000 * 100, 100);
+            const eco = Math.min(ind / 40000000 * 100, 100);
+            
+            const valid = sum >= 90000000 && rem >= 0;
+            const isRed = rem < 0;
+            
+            const [won, setWon] = useState(false);
+
+            const submit = () => {
+                if (valid) {
+                    setWon(true);
+                    addPoints(500);
+                }
+            };
+
+            if (won) {
+                return (
+                    <div className="bg-white p-10 md:p-16 text-center rounded-2xl border-2 border-emerald-400 shadow-lg fade-in">
+                        <div className="text-7xl mb-6 scale-110">🏆</div>
+                        <h2 className="text-3xl font-extrabold text-[#0F172A] mb-3 tracking-tight">Звание "Градоначальник 2026"</h2>
+                        <p className="text-[#475569] mb-8 font-medium text-lg leading-relaxed max-w-lg mx-auto">Вы успешно распределили бюджет района, повысив экономический потенциал и удовлетворенность граждан!</p>
+                        <button onClick={()=>setWon(false)} className="px-8 py-4 bg-[#0F172A] hover:bg-slate-800 text-white rounded-xl font-bold tracking-wide transition-colors">Новая симуляция</button>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="fade-in space-y-6 pb-12">
+                    <div className="bg-white border border-[#E2E8F0] p-6 sm:p-8 rounded-2xl shadow-sm text-center">
+                        <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0F172A] mb-2">Управление Финансами Района</h2>
+                        <p className="text-[#475569] text-base font-medium">Виртуальная бюджетная симуляция. Распределяйте инвестиции.</p>
+                    </div>
+
+                    <div className="grid lg:grid-cols-2 gap-6">
+                        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-[#E2E8F0] shadow-sm space-y-8 flex flex-col justify-center">
+                            <div>
+                                <div className="flex justify-between text-sm font-bold text-[#0F172A] uppercase tracking-wide mb-3"><span>Капитальный ремонт школ</span><span className="font-mono text-[#CC1111]">{sch.toLocaleString('ru')} ₽</span></div>
+                                <input type="range" min="0" max="100000000" step="1000000" value={sch} onChange={e=>setSch(Number(e.target.value))} className="w-full" />
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-sm font-bold text-[#0F172A] uppercase tracking-wide mb-3"><span>Закупка электробусов</span><span className="font-mono text-[#CC1111]">{tra.toLocaleString('ru')} ₽</span></div>
+                                <input type="range" min="0" max="100000000" step="1000000" value={tra} onChange={e=>setTra(Number(e.target.value))} className="w-full" />
+                            </div>
+                            <div>
+                                <div className="flex justify-between text-sm font-bold text-[#0F172A] uppercase tracking-wide mb-3"><span>Гранты малым производствам</span><span className="font-mono text-[#CC1111]">{ind.toLocaleString('ru')} ₽</span></div>
+                                <input type="range" min="0" max="100000000" step="1000000" value={ind} onChange={e=>setInd(Number(e.target.value))} className="w-full" />
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-[#E2E8F0] shadow-sm flex flex-col justify-between h-full gap-8">
+                            <div className="space-y-6">
+                                <div>
+                                    <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-widest mb-2"><span>Индекс удовлетворенности</span><span className="text-[#0F172A]">{sat.toFixed(1)}%</span></div>
+                                    <div className="h-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-full overflow-hidden shadow-inner"><div className="h-full bg-blue-500 transition-all duration-300" style={{width: `${sat}%`}}></div></div>
+                                </div>
+                                <div>
+                                    <div className="flex justify-between text-xs font-bold text-slate-400 uppercase tracking-widest mb-2"><span>Экономический потенциал</span><span className="text-[#0F172A]">{eco.toFixed(1)}%</span></div>
+                                    <div className="h-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-full overflow-hidden shadow-inner"><div className="h-full bg-emerald-500 transition-all duration-300" style={{width: `${eco}%`}}></div></div>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-6 rounded-2xl text-center shadow-inner">
+                                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Остаток резервного фонда</div>
+                                <div className={`text-4xl font-extrabold font-mono tracking-tighter ${isRed ? 'text-[#CC1111]' : 'text-[#0F172A]'}`}>
+                                    {rem.toLocaleString('ru')} ₽
+                                </div>
+                                {isRed && <div className="text-[10px] font-bold text-[#CC1111] mt-2 bg-red-50 p-1 rounded uppercase tracking-wider">Дефицит недопустим!</div>}
+                            </div>
+                        </div>
+                    </div>
+
+                    <button 
+                        disabled={!valid || isRed}
+                        onClick={submit}
+                        className={`w-full py-5 rounded-2xl text-xl font-bold transition-all ${!valid || isRed ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-2 border-transparent' : 'bg-[#CC1111] hover:bg-red-700 text-white cursor-pointer shadow-lg hover:shadow-xl hover:-translate-y-0.5'}`}
+                    >
+                        Утвердить финальный бюджет
+                    </button>
+                </div>
+            );
+        };
+
+        // --- TAB 4: ANALYTICS ---
+        const DIST_DATA = {
+            'ЦАО': { b: '540 млрд ₽', p: ['Реновация промзон', 'Строительство ТПУ', 'Реставрация наследия'] },
+            'ЗАО': { b: '420 млрд ₽', p: ['Парк Яуза', 'Развязка МКАД', 'Новые спорткомплексы'] },
+            'ВАО': { b: '380 млрд ₽', p: ['Национальный парк', 'Обновление поликлиник', 'Экоцентры'] },
+            'САО': { b: '450 млрд ₽', p: ['Северная Рокада', 'Технопарки', 'Переход на электробусы'] }
+        };
+
+        const SECTORS = [
+            { n: 'Субсидии промышленности', f: '35%', c: 'bg-[#CC1111]', d: 'Расходы на поддержку инновационных производств в Москве и льготные займы.' },
+            { n: 'Транспорт и инфраструктура', f: '30%', c: 'bg-blue-600', d: 'Развитие БКЛ, МЦД и закупка нового экологически чистого подвижного состава.' },
+            { n: 'Социальная поддержка', f: '25%', c: 'bg-emerald-500', d: 'Выплаты пособий, поддержка пенсионеров и многодетных семей.' },
+            { n: 'ЖКХ и Благоустройство', f: '10%', c: 'bg-amber-500', d: 'Программы "Моя улица", озеленение и обновление систем ЖКХ.' }
+        ]
+
+        const AnalyticsTab = () => {
+            const [dist, setDist] = useState('ЦАО');
+            const [sect, setSect] = useState(SECTORS[0]);
+
+            return (
+                <div className="fade-in space-y-6 pb-12">
+                    <div className="grid lg:grid-cols-2 gap-6 items-stretch">
+                        {/* Map Grid */}
+                        <div className="bg-white p-8 rounded-2xl border border-[#E2E8F0] shadow-sm flex flex-col justify-center">
+                            <h3 className="font-bold text-xs uppercase tracking-widest text-[#475569] mb-6 text-center">Интерактивная карта округов</h3>
+                            <div className="grid grid-cols-2 gap-4 max-w-xs mx-auto aspect-square w-full">
+                                <button onClick={()=>setDist('САО')} className={`rounded-2xl font-extrabold text-xl flex items-center justify-center border-4 transition-all ${dist==='САО' ? 'border-[#CC1111] bg-red-50 text-[#CC1111] shadow-md' : 'border-[#E2E8F0] bg-[#F8FAFC] text-slate-400 hover:border-slate-300 hover:text-slate-600'}`}>САО</button>
+                                <button onClick={()=>setDist('ЦАО')} className={`rounded-2xl font-extrabold text-xl flex items-center justify-center border-4 transition-all ${dist==='ЦАО' ? 'border-[#CC1111] bg-red-50 text-[#CC1111] shadow-md' : 'border-[#E2E8F0] bg-[#F8FAFC] text-slate-400 hover:border-slate-300 hover:text-slate-600'}`}>ЦАО</button>
+                                <button onClick={()=>setDist('ЗАО')} className={`rounded-2xl font-extrabold text-xl flex items-center justify-center border-4 transition-all ${dist==='ЗАО' ? 'border-[#CC1111] bg-red-50 text-[#CC1111] shadow-md' : 'border-[#E2E8F0] bg-[#F8FAFC] text-slate-400 hover:border-slate-300 hover:text-slate-600'}`}>ЗАО</button>
+                                <button onClick={()=>setDist('ВАО')} className={`rounded-2xl font-extrabold text-xl flex items-center justify-center border-4 transition-all ${dist==='ВАО' ? 'border-[#CC1111] bg-red-50 text-[#CC1111] shadow-md' : 'border-[#E2E8F0] bg-[#F8FAFC] text-slate-400 hover:border-slate-300 hover:text-slate-600'}`}>ВАО</button>
+                            </div>
+                        </div>
+
+                        {/* Passport Summary */}
+                        <div className="bg-[#0F172A] text-white p-8 rounded-2xl shadow-xl flex flex-col justify-center relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-8 opacity-10">
+                                <Icons.Analytics />
+                            </div>
+                            <div className="z-10 relative">
+                                <div className="text-[10px] uppercase font-bold tracking-widest text-[#CC1111] mb-2">Обзорный Паспорт</div>
+                                <h2 className="text-4xl font-extrabold mb-8 tracking-tight">{dist} Москвы</h2>
+                                <div className="bg-white/10 p-5 rounded-2xl mb-8 backdrop-blur-md border border-white/10 shadow-inner">
+                                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wide block mb-1">Фонд развития округа (2026)</span>
+                                    <span className="text-3xl font-mono text-white font-extrabold tracking-tighter">{DIST_DATA[dist].b}</span>
+                                </div>
+                                <div className="space-y-4">
+                                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Действующие Госпрограммы:</span>
+                                    <ul className="space-y-3">
+                                        {DIST_DATA[dist].p.map((p, i) => (
+                                            <li key={i} className="flex items-center gap-3 text-sm font-semibold tracking-wide">
+                                                <div className="w-2 h-2 rounded-full bg-[#CC1111] shadow-[0_0_8px_rgba(204,17,17,0.8)]"></div> {p}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Breakdown Bar */}
+                    <div className="bg-white p-8 rounded-2xl border border-[#E2E8F0] shadow-sm text-center">
+                        <h3 className="font-extrabold text-[#0F172A] mb-6 text-lg tracking-tight">Модель Распределения Бюджета</h3>
+                        <div className="flex w-full h-10 rounded-xl overflow-hidden border border-slate-200 mb-8 cursor-pointer shadow-inner">
+                            {SECTORS.map(s => (
+                                <div key={s.n} onClick={()=>setSect(s)} className={`h-full ${s.c} hover:opacity-80 transition-all flex items-center justify-center font-mono text-xs font-bold text-white shadow-inner`} style={{width: s.f}}>
+                                    {Number(s.f.replace('%','')) > 15 ? s.f : ''}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="bg-[#F8FAFC] border border-[#E2E8F0] p-5 rounded-2xl max-w-2xl mx-auto text-sm text-[#0F172A] font-semibold leading-relaxed">
+                            <span className="text-[#CC1111] font-extrabold mr-2 uppercase tracking-wide text-xs">{sect.n}:</span> {sect.d}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- LAYOUT & NAVIGATION ---
+        const Header = ({ balance }) => (
+            <header className="bg-white/90 backdrop-blur-md sticky top-0 z-50 border-b border-[#E2E8F0] px-5 sm:px-8 py-3 w-full flex justify-between items-center h-[72px] shadow-sm">
+                <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-[#CC1111] text-white flex items-center justify-center font-extrabold text-xl shadow-md border-b-2 border-red-800">М</div>
+                    <h1 className="font-extrabold text-[#0F172A] hidden sm:block tracking-tight text-xl">МосГорБюджет.Трек</h1>
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 px-4 py-2 bg-[#F8FAFC] border border-[#E2E8F0] rounded-full shadow-inner">
+                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
+                        <div className="text-[10px] sm:text-xs font-bold text-[#475569] uppercase tracking-wider hidden sm:block">Миллион призов:</div>
+                        <div className="text-sm font-extrabold text-[#CC1111] font-mono">{balance.toLocaleString('ru')} Б</div>
+                    </div>
+                    <div className="w-10 h-10 rounded-full bg-slate-100 border-2 border-[#E2E8F0] shadow-sm flex items-center justify-center text-xs font-extrabold text-[#0F172A] hidden sm:flex">МД</div>
+                </div>
+            </header>
+        );
+
+        const TAB_ITEMS = [
+            { id: 'services', l: 'Сервисы', i: <Icons.Services/> },
+            { id: 'quests', l: 'Игровой Центр', i: <Icons.Quests/> },
+            { id: 'mayor', l: 'МэрСити', i: <Icons.Mayor/> },
+            { id: 'analytics', l: 'Аналитика', i: <Icons.Analytics/> }
+        ];
+
+        const FluidHeroBackground = () => {
+            const canvasRef = useRef(null);
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                const ctx = canvas.getContext("2d");
+                if (!ctx) return;
+
+                const particles = [];
+                const N = 950; // Dense high-class particle sphere
+                const goldenRatio = (1 + Math.sqrt(5)) / 2;
+
+                // 3D Fibonacci sphere grid
+                for (let i = 0; i < N; i++) {
+                    const theta = (2 * Math.PI * i) / goldenRatio;
+                    const phi = Math.acos(1 - (2 * (i + 0.5)) / N);
+                    
+                    const x = Math.cos(theta) * Math.sin(phi);
+                    const y = Math.sin(theta) * Math.sin(phi);
+                    const z = Math.cos(phi);
+
+                    // swirly tangent trajectory
+                    let tx = -z;
+                    let ty = (Math.random() - 0.5) * 0.08;
+                    let tz = x;
+
+                    const len = Math.sqrt(tx * tx + ty * ty + tz * tz);
+                    tx /= len;
+                    ty /= len;
+                    tz /= len;
+
+                    particles.push({
+                        x, y, z,
+                        tx, ty, tz,
+                        size: 1.6 + Math.random() * 2.2,
+                        baseLength: 10 + Math.random() * 12
+                    });
+                }
+
+                const mouse = {
+                    x: 0.5, y: 0.5,
+                    targetX: 0.5, targetY: 0.5,
+                    xPixels: 0, yPixels: 0,
+                    active: false
+                };
+
+                const handleMove = (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    mouse.targetX = (e.clientX - rect.left) / canvas.width;
+                    mouse.targetY = (e.clientY - rect.top) / canvas.height;
+                    mouse.xPixels = e.clientX - rect.left;
+                    mouse.yPixels = e.clientY - rect.top;
+                    mouse.active = true;
+                };
+
+                const handleTouch = (e) => {
+                    if (e.touches && e.touches.length > 0) {
+                        const rect = canvas.getBoundingClientRect();
+                        const touch = e.touches[0];
+                        mouse.targetX = (touch.clientX - rect.left) / canvas.width;
+                        mouse.targetY = (touch.clientY - rect.top) / canvas.height;
+                        mouse.xPixels = touch.clientX - rect.left;
+                        mouse.yPixels = touch.clientY - rect.top;
+                        mouse.active = true;
+                    }
+                };
+
+                window.addEventListener("mousemove", handleMove, { passive: true });
+                window.addEventListener("touchmove", handleTouch, { passive: true });
+
+                let width = window.innerWidth;
+                let height = window.innerHeight;
+
+                const resize = () => {
+                    width = window.innerWidth;
+                    height = window.innerHeight;
+                    canvas.width = width;
+                    canvas.height = height;
+                };
+                window.addEventListener("resize", resize, { passive: true });
+                resize();
+
+                let autoRotX = 0;
+                let autoRotY = 0;
+                let currentRotX = 0;
+                let currentRotY = 0;
+
+                const angleXSpeed = 0.0008;
+                const angleYSpeed = 0.0012;
+
+                const rotateY = (x, z, theta) => {
+                    const cos = Math.cos(theta);
+                    const sin = Math.sin(theta);
+                    return [x * cos - z * sin, x * sin + z * cos];
+                };
+
+                const rotateX = (y, z, theta) => {
+                    const cos = Math.cos(theta);
+                    const sin = Math.sin(theta);
+                    return [y * cos - z * sin, y * sin + z * cos];
+                };
+
+                const getParticleColor = (axisValue) => {
+                    if (axisValue < -0.4) {
+                        return "rgb(251, 146, 60)"; // Orange
+                    } else if (axisValue < 0.0) {
+                        return "rgb(244, 63, 94)";  // Coral Pink
+                    } else if (axisValue < 0.4) {
+                        return "rgb(139, 92, 246)"; // Purple
+                    } else {
+                        return "rgb(50, 121, 249)";  // Blue
+                    }
+                };
+
+                let animId;
+                const draw = () => {
+                    ctx.clearRect(0, 0, width, height);
+
+                    const sphereRadius = Math.min(width, height) * 0.42;
+                    const centerX = width / 2;
+                    const centerY = height / 2;
+
+                    autoRotX += angleXSpeed;
+                    autoRotY += angleYSpeed;
+
+                    const targetRotY = mouse.active ? (mouse.targetX - 0.5) * 1.6 : 0;
+                    const targetRotX = mouse.active ? -(mouse.targetY - 0.5) * 1.6 : 0;
+
+                    currentRotX += (targetRotX - currentRotX) * 0.06;
+                    currentRotY += (targetRotY - currentRotY) * 0.06;
+
+                    const totalAngleX = autoRotX + currentRotX;
+                    const totalAngleY = autoRotY + currentRotY;
+
+                    particles.forEach((p) => {
+                        const halfLen = p.baseLength / 2;
+                        const ltx = p.tx * halfLen;
+                        const lty = p.ty * halfLen;
+                        const ltz = p.tz * halfLen;
+
+                        const p1x = p.x * sphereRadius - ltx;
+                        const p1y = p.y * sphereRadius - lty;
+                        const p1z = p.z * sphereRadius - ltz;
+
+                        const p2x = p.x * sphereRadius + ltx;
+                        const p2y = p.y * sphereRadius + lty;
+                        const p2z = p.z * sphereRadius + ltz;
+
+                        const [r1x_temp, r1z_temp] = rotateY(p1x, p1z, totalAngleY);
+                        const [r1y, r1z] = rotateX(p1y, r1z_temp, totalAngleX);
+                        const r1x = r1x_temp;
+
+                        const [r2x_temp, r2z_temp] = rotateY(p2x, p2z, totalAngleY);
+                        const [r2y, r2z] = rotateX(p2y, r2z_temp, totalAngleX);
+                        const r2x = r2x_temp;
+
+                        const [rcx_temp, rcz_temp] = rotateY(p.x * sphereRadius, p.z * sphereRadius, totalAngleY);
+                        const [, rcz] = rotateX(p.y * sphereRadius, rcz_temp, totalAngleX);
+
+                        const dCamera = sphereRadius * 2.3;
+                        const zScale1 = dCamera / (dCamera + r1z);
+                        const zScale2 = dCamera / (dCamera + r2z);
+                        const zScaleCenter = dCamera / (dCamera + rcz);
+
+                        const sx1 = centerX + r1x * zScale1;
+                        const sy1 = centerY + r1y * zScale1;
+                        const sx2 = centerX + r2x * zScale2;
+                        const sy2 = centerY + r2y * zScale2;
+
+                        const midX = (sx1 + sx2) / 2;
+                        const realMidY = (sy1 + sy2) / 2;
+
+                        const mdx = midX - mouse.xPixels;
+                        const mdy = realMidY - mouse.yPixels;
+                        const mDist = Math.sqrt(mdx * mdx + mdy * mdy);
+
+                        let pushX = 0;
+                        let pushY = 0;
+                        let hoverStretch = 1.0;
+
+                        const pushRadius = 135;
+                        if (mouse.active && mDist < pushRadius && mDist > 0.1) {
+                            const factor = 1.0 - mDist / pushRadius;
+                            const pushForce = factor * factor * 28;
+                            pushX = (mdx / mDist) * pushForce;
+                            pushY = (mdy / mDist) * pushForce;
+                            hoverStretch = 1.0 + factor * 1.6;
+                        }
+
+                        const finalX1 = sx1 + pushX - (sx2 - sx1) * (hoverStretch - 1) * 0.5;
+                        const finalY1 = sy1 + pushY - (sy2 - sy1) * (hoverStretch - 1) * 0.5;
+                        const finalX2 = sx2 + pushX + (sx2 - sx1) * (hoverStretch - 1) * 0.5;
+                        const finalY2 = sy2 + pushY + (sy2 - sy1) * (hoverStretch - 1) * 0.5;
+
+                        const diagonalVal = ((midX - centerX) - (realMidY - centerY)) / (sphereRadius * 0.85);
+                        const capsuleColor = getParticleColor(diagonalVal);
+
+                        const depthAlpha = Math.max(0.12, (1.0 - (rcz + sphereRadius) / (sphereRadius * 2.0))) * 0.82;
+
+                        ctx.beginPath();
+                        ctx.moveTo(finalX1, finalY1);
+                        ctx.lineTo(finalX2, finalY2);
+
+                        ctx.strokeStyle = capsuleColor;
+                        ctx.lineWidth = Math.max(1.3, p.size * zScaleCenter * hoverStretch);
+                        ctx.lineCap = "round";
+                        ctx.globalAlpha = depthAlpha;
+                        ctx.stroke();
+                    });
+
+                    animId = requestAnimationFrame(draw);
+                };
+
+                draw();
+
+                return () => {
+                    cancelAnimationFrame(animId);
+                    window.removeEventListener("mousemove", handleMove);
+                    window.removeEventListener("touchmove", handleTouch);
+                    window.removeEventListener("resize", resize);
+                };
+            }, []);
+
+            return (
+                <canvas 
+                    ref={canvasRef} 
+                    style={{ 
+                        position: "fixed", 
+                        inset: 0, 
+                        width: "100vw", 
+                        height: "100vh", 
+                        zIndex: 0, 
+                        pointerEvents: "none",
+                        mixBlendMode: "multiply",
+                        opacity: 0.95
+                    }} 
+                />
+            );
+        };
+
+        const App = () => {
+            const [balance, setBalance] = useState(() => {
+                try { return parseInt(localStorage.getItem('mos_game_balance_v4')) || 0; } catch { return 0; }
+            });
+            const [activeTab, setActiveTab] = useState('services');
+
+            const addPoints = (pts) => {
+                setBalance(b => {
+                     const newB = b + pts;
+                     try { localStorage.setItem('mos_game_balance_v4', newB.toString()); } catch {}
+                     return newB;
+                });
+            };
+
+            return (
+                <div className="flex flex-col min-h-screen bg-[#F8FAFC] relative">
+                    <FluidHeroBackground />
+                    <div className="flex-1 flex flex-col relative z-10">
+                        <Header balance={balance} />
+                        
+                        <div className="flex-1 flex flex-col md:flex-row w-full max-w-7xl mx-auto items-stretch">
+                        
+                        {/* Desktop Sidebar Bento Grid format */}
+                        <aside className="hidden md:flex flex-col gap-2 w-72 shrink-0 p-6 border-r border-[#E2E8F0] h-[calc(100vh-72px)] sticky top-[72px] bg-white/50">
+                            <div className="bg-[#0F172A] text-white p-5 rounded-2xl mb-4 shadow-sm relative overflow-hidden">
+                                <div className="absolute -right-4 -top-4 opacity-10 scale-150"><Icons.Mayor /></div>
+                                <div className="text-[10px] font-bold text-[#CC1111] uppercase tracking-widest mb-1">Профиль участника</div>
+                                <div className="font-extrabold text-lg">Панель Управления</div>
+                            </div>
+                            
+                            {TAB_ITEMS.map(t => (
+                                <button 
+                                    key={t.id} 
+                                    onClick={() => setActiveTab(t.id)} 
+                                    className={`flex items-center gap-3.5 px-5 py-4 rounded-2xl font-bold tracking-wide transition-all ${activeTab === t.id ? 'bg-white text-[#CC1111] shadow-sm border border-[#E2E8F0]' : 'text-[#475569] hover:bg-white hover:text-[#0F172A] border border-transparent'}`}
+                                >
+                                    <div className={`${activeTab === t.id ? 'scale-110 transition-transform' : ''}`}>{t.i}</div>
+                                    <span>{t.l}</span>
+                                </button>
+                            ))}
+                        </aside>
+
+                        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-x-hidden pb-28 md:pb-8">
+                            {activeTab === 'services' && <ServicesTab />}
+                            {activeTab === 'quests' && <QuestsTab addPoints={addPoints} />}
+                            {activeTab === 'mayor' && <MayorTab addPoints={addPoints} />}
+                            {activeTab === 'analytics' && <AnalyticsTab />}
+                        </main>
+                        
+                    </div>
+
+                    {/* Mobile Navigation */}
+                    <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-[#E2E8F0] flex justify-around items-center px-2 py-3 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+                        {TAB_ITEMS.map(t => (
+                            <button 
+                                key={t.id} 
+                                onClick={() => setActiveTab(t.id)} 
+                                className={`flex flex-col items-center gap-1.5 w-full transition-colors ${activeTab === t.id ? 'text-[#CC1111]' : 'text-slate-400'}`}
+                            >
+                                <div className={`${activeTab === t.id ? 'scale-110 drop-shadow-sm' : 'scale-95'}`}>{t.i}</div>
+                                <span className={`text-[10px] font-bold tracking-wide ${activeTab === t.id ? 'text-[#CC1111]' : 'text-slate-500'}`}>{t.l}</span>
+                            </button>
+                        ))}
+                    </nav>
+                </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
